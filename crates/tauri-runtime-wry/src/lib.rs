@@ -58,7 +58,7 @@ use tao::{
     PhysicalPosition as TaoPhysicalPosition, PhysicalSize as TaoPhysicalSize,
     Position as TaoPosition, Size as TaoSize,
   },
-  event::{Event, StartCause, WindowEvent as TaoWindowEvent},
+  event::{Event, StartCause, ThreadEvent as TaoThreadEvent, WindowEvent as TaoWindowEvent},
   event_loop::{
     ControlFlow, DeviceEventFilter as TaoDeviceEventFilter, EventLoop, EventLoopBuilder,
     EventLoopProxy as TaoEventLoopProxy, EventLoopWindowTarget,
@@ -4003,6 +4003,8 @@ fn handle_event_loop<T: UserEvent>(
 
     Event::LoopDestroyed => {
       callback(RunEvent::Exit);
+
+      *control_flow = ControlFlow::Exit;
     }
 
     #[cfg(windows)]
@@ -4213,6 +4215,20 @@ fn handle_event_loop<T: UserEvent>(
     } => callback(RunEvent::Reopen {
       has_visible_windows,
     }),
+    Event::ThreadEvent { event, .. } => match event {
+      TaoThreadEvent::CloseRequested => {
+        let (tx, rx) = channel();
+        callback(RunEvent::ExitRequested { code: None, tx });
+
+        let recv = rx.try_recv();
+        let should_prevent = matches!(recv, Ok(ExitRequestedEventAction::Prevent));
+
+        if !should_prevent {
+          *control_flow = ControlFlow::Exit;
+        }
+      }
+      _ => (),
+    },
     _ => (),
   }
 }
